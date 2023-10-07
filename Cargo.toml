@@ -11,12 +11,10 @@ readme = "README.md"
 license = "MIT"
 
 [features]
-default = ["linux-evdev", "poll"]
+default = ["linux-evdev"]
 linux-evdev = ["evdev"]
-poll = ["mio"]
 
 [dependencies]
-evdev = { version = "0.10", optional = true }
+evdev = { version = "0.12", optional = true }
 failure = "0.1"
 glob = "0.2"
-mio = { version = "0.6", optional = true }

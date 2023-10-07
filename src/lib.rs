@@ -9,19 +9,14 @@ extern crate evdev;
 #[macro_use]
 extern crate failure;
 extern crate glob;
-#[cfg(feature = "poll")]
-extern crate mio;
 
-#[cfg(feature = "poll")]
-mod poll;
-
-use evdev::Device;
+use evdev::{Device, EventType};
 use failure::Error;
 use glob::glob;
 
 use std::io;
-use std::os::unix::io::RawFd;
 use std::time::Duration;
+use std::fmt::Debug;
 
 // Device name provided by the hardware. We match against it.
 const SENSE_HAT_EVDEV_NAME: &[u8; 31] = b"Raspberry Pi Sense HAT Joystick";
@@ -80,9 +75,9 @@ impl Action {
 /// `std::time::Duration`, the `Direction`, and the `Action` that were issued by the `JoyStick`.
 #[derive(Debug)]
 pub struct JoyStickEvent {
-    timestamp: Duration,
-    direction: Direction,
-    action: Action,
+    pub timestamp: Duration,
+    pub direction: Direction,
+    pub action: Action,
 }
 
 impl JoyStickEvent {
@@ -95,8 +90,6 @@ impl JoyStickEvent {
     }
 }
 
-/// A type representing the Sense HAT joystick device.
-#[derive(Debug)]
 pub struct JoyStick {
     device: Device,
 }
@@ -108,8 +101,10 @@ impl JoyStick {
             match entry {
                 Ok(path) => {
                     let device = Device::open(&path)?;
-                    if device.name().as_bytes() == SENSE_HAT_EVDEV_NAME {
-                        return Ok(JoyStick { device });
+                    if let Some(name) = device.name() {
+                        if name.as_bytes() == SENSE_HAT_EVDEV_NAME {
+                            return Ok(JoyStick { device });    
+                        }
                     }
                 }
                 Err(e) => return Err(e.into()),
@@ -122,24 +117,16 @@ impl JoyStick {
     /// block the current thread until events are issued by the `JoyStick` device.
     pub fn events(&mut self) -> io::Result<Vec<JoyStickEvent>> {
         let events: Vec<JoyStickEvent> = self.device
-            .events_no_sync()
+            .fetch_events()
             .map_err(|e| io::Error::from(e))?
-            .filter(|ev| ev._type == 1)
+            .filter(|ev| ev.event_type() == EventType::KEY)
             .map(|ev| {
-                let secs = ev.time.tv_sec as u64;
-                let nsecs = ev.time.tv_usec as u32 * 1_000;
-                let time = Duration::new(secs, nsecs);
-
-                let direction = Direction::try_from(ev.code as usize).unwrap();
-                let action = Action::try_from(ev.value as usize).unwrap();
+                let time = ev.timestamp().elapsed().unwrap();
+                let direction = Direction::try_from(ev.code() as usize).unwrap();
+                let action = Action::try_from(ev.value() as usize).unwrap();
                 JoyStickEvent::new(time, direction, action)
             })
             .collect();
         Ok(events)
-    }
-
-    /// Returns the raw file-descriptor, `RawFd`, for the the Joystick.
-    pub fn fd(&self) -> RawFd {
-        self.device.fd()
     }
 }
